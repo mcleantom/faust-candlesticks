@@ -1,0 +1,39 @@
+# config file version
+apiVersion: 1
+
+# list of datasources that should be deleted from the database
+deleteDatasources:
+  - name: InfluxDB
+    orgId: 1
+
+# list of datasources to insert/update depending
+# what's available in the database
+datasources:
+  # <string, required> name of the datasource. Required
+- name: InfluxDB
+  # <string, required> datasource type. Required
+  type: influxdb
+  # <string, required> access mode. direct or proxy. Required
+  access: proxy
+  # <int> org id. will default to orgId 1 if not specified
+  orgId: 1
+  # <string> url
+  url: http://influxdb:8086
+  # <string> database token for InfluxDB 2.x
+  token: ""
+  # <string> InfluxDB 2.x bucket name
+  database: "candlesticks"
+  # <bool> enable/disable basic auth
+  basicAuth: false
+  # <bool> mark as default datasource. Max one per org
+  isDefault: true
+  # <map> fields that will be converted to json and stored in json_data
+  jsonData:
+    timeInterval: "5s"
+    httpHeaderName1: 'Authorization'
+    httpMode: POST
+  secureJsonData:
+    httpHeaderValue1: 'Token HFvCfIS2vjgxLh871fXQNLiX0XYpjTofZOE759w8XQi6lkw9YrDO9uE99TjRNMzE5JGEFLh6OXaabCitUZ0PDM8BMm0TeyDDAug7GrJQXwMVmmjlAxklAfcbLwab2may'
+  version: 1
+  # <bool> allow users to edit datasources from the UI.
+  editable: false

@@ -1,8 +1,23 @@
 import random
 
 import faust
+import aiohttp
 from datetime import timedelta, datetime
 from time import time
+
+
+TOPIC = 'raw-event'
+SINK = 'agg-event'
+TABLE = 'tumbling_table'
+KAFKA = 'kafka://localhost:9092'
+CLEANUP_INTERVAL = 1.0
+WINDOW = 10
+WINDOW_EXPIRES = 20
+PARTITIONS = 1
+INFLUX_URL = "http://localhost:8086"
+INFLUX_TOKEN = "HFvCfIS2vjgxLh871fXQNLiX0XYpjTofZOE759w8XQi6lkw9YrDO9uE99TjRNMzE5JGEFLh6OXaabCitUZ0PDM8BMm0TeyDDAug7GrJQXwMVmmjlAxklAfcbLwab2may"
+INFLUX_ORG = "candlesticks"
+INFLUX_BUCKET = "candlesticks"
 
 
 class StockTransaction(faust.Record):
@@ -12,6 +27,7 @@ class StockTransaction(faust.Record):
 
 
 class Candlestick(faust.Record):
+    period: timedelta
     stock: str
     start_aggregation_period_timestamp: datetime
     end_aggregation_period_timestamp: datetime
@@ -45,32 +61,49 @@ class Candlestick(faust.Record):
         self.aggregation_count += 1
 
 
-TOPIC = 'raw-event'
-SINK = 'agg-event'
-TABLE = 'tumbling_table'
-KAFKA = 'kafka://localhost:9092'
-CLEANUP_INTERVAL = 1.0
-WINDOW = 1
-WINDOW_EXPIRES = 20
-PARTITIONS = 1
-
-
 app = faust.App(TABLE, broker=KAFKA, topic_partitions=1, version=1)
 app.conf.table_cleanup_interval = CLEANUP_INTERVAL
-
 
 source = app.topic(TOPIC, value_type=StockTransaction, key_type=str)
 sink = app.topic(SINK, value_type=Candlestick)
 
 
-def window_processor(stock, candlestick):
+async def window_processor(stock, candlestick):
     print(candlestick)
-    sink.send_soon(value=candlestick)
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            influx_candle = (
+                f"{INFLUX_BUCKET},period={candlestick.period},stock={candlestick.stock} "
+                f"start_aggregation_period_timestamp={candlestick.start_aggregation_period_timestamp},"
+                f"end_aggregation_period_timestamp={candlestick.end_aggregation_period_timestamp},"
+                f"start_price={candlestick.start_price},"
+                f"high_price={candlestick.high_price},"
+                f"low_price={candlestick.low_price},"
+                f"end_price={candlestick.end_price},"
+                f"aggregation_count={candlestick.aggregation_count} "
+                f"{int(time() * 1e9)}"
+            )
+            headers = {"Authorization": f"Token {INFLUX_TOKEN}", "Content-Type": "text/plain; charset=utf-8"}
+            async with session.post(
+                f"{INFLUX_URL}/api/v2/write?org={INFLUX_ORG}&bucket={INFLUX_BUCKET}&precision=ns",
+                headers=headers,
+                data=influx_candle
+            ) as response:
+                if response.status == 204:
+                    print(f"Send candlestick to influx")
+                else:
+                    print(await response.json())
+                    response.raise_for_status()
+    except Exception as e:
+        print(e)
+    await sink.send_soon(value=candlestick)
 
 
 candlesticks = app.Table(
     TABLE,
     default=lambda: Candlestick(
+        period=WINDOW,
         stock="",
         start_aggregation_period_timestamp=None,
         end_aggregation_period_timestamp=None,
@@ -100,7 +133,6 @@ async def produce():
 
 @app.agent(source)
 async def consume(transactions):
-    transaction: StockTransaction
     async for transaction in transactions.group_by(StockTransaction.stock):
         candlestick_window = candlesticks[transaction.stock]
         current_window = candlestick_window.current()
