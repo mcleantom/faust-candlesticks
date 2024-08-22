@@ -62,6 +62,7 @@ sink = app.topic(SINK, value_type=Candlestick)
 
 
 def window_processor(stock, candlestick):
+    print(candlestick)
     sink.send_soon(value=candlestick)
 
 

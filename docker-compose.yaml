@@ -27,8 +27,23 @@ services:
       KAFKA_LISTENERS: PLAINTEXT://kafka:29092,OUTSIDE://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,OUTSIDE://localhost:9092
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_CREATE_TOPICS: 'order-books:3:2'
+      KAFKA_CREATE_TOPICS: 'raw-event:3:2'
     restart: unless-stopped
+
+  kafka-init:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - kafka
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        # Wait for Kafka to start
+        while ! nc -z kafka 29092; do sleep 0.1; done;
+        # Create topics
+        kafka-topics --create --topic raw-event --bootstrap-server kafka:29092 --partitions 1 --replication-factor 1;
+        kafka-topics --create --topic agg-event --bootstrap-server kafka:29092 --partitions 1 --replication-factor 1;
+    restart: "on-failure"
 
   kafdrop:
     image: obsidiandynamics/kafdrop:3.27.0
