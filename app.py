@@ -12,7 +12,6 @@ class StockTransaction(faust.Record):
 
 
 class Candlestick(faust.Record):
-    date: datetime
     start_aggregation_period_timestamp: datetime
     end_aggregation_period_timestamp: datetime
     start_price: float
@@ -69,7 +68,6 @@ def window_processor(stock, candlestick):
 candlesticks = app.Table(
     TABLE,
     default=lambda: Candlestick(
-        date=datetime.min,
         start_aggregation_period_timestamp=None,
         end_aggregation_period_timestamp=None,
         start_price=0.0,
@@ -100,7 +98,7 @@ async def consume(transactions):
     transaction: StockTransaction
     async for transaction in transactions:
         candlestick_window = candlesticks[transaction.stock]
-        current_window = candlestick_window[transaction.date]
+        current_window = candlestick_window.current()
         current_window.aggregate_transaction(transaction)
         candlesticks[transaction.stock] = current_window
 
