@@ -12,6 +12,7 @@ class StockTransaction(faust.Record):
 
 
 class Candlestick(faust.Record):
+    stock: str
     start_aggregation_period_timestamp: datetime
     end_aggregation_period_timestamp: datetime
     start_price: float
@@ -21,6 +22,7 @@ class Candlestick(faust.Record):
     aggregation_count: int
 
     def aggregate_transaction(self, stock_transaction: StockTransaction):
+        self.stock = stock_transaction.stock
         unit_price = stock_transaction.price
 
         if self.aggregation_count == 0:
@@ -48,7 +50,7 @@ SINK = 'agg-event'
 TABLE = 'tumbling_table'
 KAFKA = 'kafka://localhost:9092'
 CLEANUP_INTERVAL = 1.0
-WINDOW = 10
+WINDOW = 1
 WINDOW_EXPIRES = 20
 PARTITIONS = 1
 
@@ -69,6 +71,7 @@ def window_processor(stock, candlestick):
 candlesticks = app.Table(
     TABLE,
     default=lambda: Candlestick(
+        stock="",
         start_aggregation_period_timestamp=None,
         end_aggregation_period_timestamp=None,
         start_price=0.0,
@@ -87,17 +90,18 @@ candlesticks = app.Table(
 
 @app.timer(0.1)
 async def produce():
+    stock = random.choice(["AAPL", "GOOG", "MSFT"])
     price = random.uniform(100, 200)
     await source.send(
-        key="AAPL",
-        value=StockTransaction(stock="AAPL", price=price, date=int(time()))
+        key=stock,
+        value=StockTransaction(stock=stock, price=price, date=int(time()))
     )
 
 
 @app.agent(source)
 async def consume(transactions):
     transaction: StockTransaction
-    async for transaction in transactions:
+    async for transaction in transactions.group_by(StockTransaction.stock):
         candlestick_window = candlesticks[transaction.stock]
         current_window = candlestick_window.current()
         current_window.aggregate_transaction(transaction)
